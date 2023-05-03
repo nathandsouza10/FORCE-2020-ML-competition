@@ -8,6 +8,13 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.experimental import enable_iterative_imputer
 from sklearn.impute import IterativeImputer
 from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import Lasso
+from sklearn.preprocessing import StandardScaler
+from mpl_toolkits.mplot3d import Axes3D
+import torch
+import torch.nn as nn
+import seaborn as sns
+from sklearn.linear_model import ElasticNet
 
 
 class Lithology:
@@ -42,24 +49,40 @@ class Lithology:
         df_imputed = pd.DataFrame(imputer.fit_transform(self.X_train), columns=self.X_train.columns)
         return df_imputed
 
-    def explore_imputed_data(self):
+    def get_imputed_data(self):
         ffil_imputed_data = self.ffill_impute()
         simple_imputed_data = self.simple_impute()
         regression_imputed_data = self.regression_impute()
-        pca = PCA(n_components=2)
+        return ffil_imputed_data, simple_imputed_data, regression_imputed_data
+
+    def explore_imputed_data(self):
+        ffil_imputed_data, simple_imputed_data, regression_imputed_data = self.get_imputed_data()
+        pca = PCA(n_components=3)  # Change to 3 components
         simple_reduced_data = pca.fit_transform(simple_imputed_data, self.y_train)
         ffill_reduced_data = pca.fit_transform(ffil_imputed_data, self.y_train)
         regression_reduced_data = pca.fit_transform(regression_imputed_data, self.y_train)
-        # plot imputed data using dimension reduction
-        fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(20, 15))
-        ax1.scatter(simple_reduced_data[:, 0], simple_reduced_data[:, 1], c=self.y_train, s=2)
+        # Plot imputed data using dimension reduction
+        fig = plt.figure(figsize=(20, 20))
+        ax1 = fig.add_subplot(1, 3, 1, projection='3d')
+        ax1.scatter(simple_reduced_data[:, 0], simple_reduced_data[:, 1], simple_reduced_data[:, 2], c=self.y_train,
+                    s=2)
         ax1.set_title('Simple Imputer')
-        ax2.scatter(ffill_reduced_data[:, 0], ffill_reduced_data[:, 1], c=self.y_train, s=2)
+        ax2 = fig.add_subplot(1, 3, 2, projection='3d')
+        ax2.scatter(ffill_reduced_data[:, 0], ffill_reduced_data[:, 1], ffill_reduced_data[:, 2], c=self.y_train, s=2)
         ax2.set_title('ffill Imputer')
-        ax3.scatter(regression_reduced_data[:, 0], regression_reduced_data[:, 1], c=self.y_train, s=2)
+        ax3 = fig.add_subplot(1, 3, 3, projection='3d')
+        ax3.scatter(regression_reduced_data[:, 0], regression_reduced_data[:, 1], regression_reduced_data[:, 2],
+                    c=self.y_train, s=2)
         ax3.set_title('Linear Regression Imputer')
         plt.show()
 
-
-l = Lithology(filename='./train/train.csv', target_var='FORCE_2020_LITHOFACIES_LITHOLOGY')
-l.explore_imputed_data()
+    def get_important_features(self):
+        column_names = ['ffill Imputer', 'simple Imputer', 'regression Imputer']
+        important_features_df = pd.DataFrame(columns=column_names)
+        for i, X in enumerate(self.get_imputed_data()):
+            elasticNet = ElasticNet(alpha=0.1, l1_ratio=0.5, max_iter=100000)
+            elasticNet.fit(X, self.y_train)
+            coef = pd.Series(elasticNet.coef_, index=X.columns)
+            important_features = coef.abs().sort_values(ascending=False)
+            important_features_df[column_names[i]] = important_features
+        return important_features_df
